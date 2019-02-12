@@ -1,0 +1,153 @@
+---
+title: "R Notebook"
+output:
+  pdf_document: default
+  html_notebook: default
+encoding: iso-8859-2
+---
+
+<mark> 
+Takto vám vyznaèím komentáre.
+Prvý je, ¾e vá¹ skript nefunguje - treba explicitne naèíta» dáta, nemô¾ete sa spolieha», ¾e si ich niekto múdro naèíta vopred, kým si spusttí vá¹ kód. Príkaz získate tak, ¾e pou¾ijete z menu `File/Import dataset/From text (base)`, vyberiete súbor `diet.csv`, za¹krtnete `Heading : Yes`, dáte OK a potom si príkaz odkopírujete z konzoly do skriptu.  Tak¾e toto ste mali spravi»:
+</mark>
+
+```{r}
+library(tidyverse)
+
+diet <- read.csv("diet.csv", header=TRUE)
+
+head(diet)
+```
+
+
+```{r}
+diet$stratavahy = diet$pre.weight - diet$weight6weeks
+#týmto krokom som si vyjadril zmenu hmotnosti poèas doby trvania experimentu (6 tý¾dòov)
+```
+
+"robi» ¹tandardný graf (plot) je z týchto dát bezvýznamné, nie je medzi nimi ¾iadna súvislos»."
+
+<mark>
+No to sa mýlite. Ak sa va¹e premenné volajú V1, V2 a podobne, tak sa to mô¾e zamota». Ale mô¾eme sa predsa pýta», aký je úèinok dieéty, èi je pokles váhy významný (tým nemyslím priamo ¹tatisticky signifikantný, lebo ¹tatisticky signifikantný mô¾e by» aj pokles o 10 gramov, ak spravíte dostatoène veµkú ¹túdiu, a kvôli takému poklesu nebude nikto podstupova» diétu). A mô¾eme sa pýta», èi je rozdiel medzi ¾enami a mu¾mi, èi je pokles váhy relatívny alebo absolútny, èi závisí od veku, èi je lep¹ie pozera» sa na diétu cez stratu váhy alebo BMI. Tak¾e vám dám pár nápadov, a nechám vás s nimi pracova».
+</makr>
+
+<mark>
+Zavedieme BMI, aj keï to je nie celkom zmysluplnýý parameter.
+</mark>
+
+```{r}
+diet %>%
+  mutate(
+    stratavahy = pre.weight - weight6weeks,
+    pre.bmi = pre.weight / (Height/100)**2,
+    bmi6weeks = weight6weeks / (Height/100)**2,
+    bmi.ratio = (pre.bmi - bmi6weeks)/pre.bmi # to je zároveò aj relatívna strata váhy
+  ) -> diet
+head(diet)
+```
+
+```{r}
+boxplot(stratavahy~Diet,data=diet,col="red",ylab = "stratavahy (kg)", xlab = "Diet")
+abline(h=0,col="green")
+```
+na tomto boxplote mô¾eme vidie» zmenu váhy v závislosti od typu diéty. Typy diét boli anonymizované, nepoznáme ich priebeh, ale z výsledku mo¾no jasne usúdi», ¾e diéta 3 bola najúèinnej¹ia. Názov osi V7 predstavuje typ diéty, ale v datasete mi to ne¹lo zmeni», bez jeho znefunkènenia.
+
+<mark>
+Nevidím, kde by mohol by» problém, mô¾ete si premennú µahko premenova» ako chcete. Teraz máme pomenovania správne, a zmenil som ich aj vo va¹om kóde, ale keby ste chceli premenova» nejaký ståpec, robí sa to takto: `diet %>% rename(nove.meno1 = stare.meno1, nove.meno2 = stare.meno2) -> diet`. A osi grafu si mô¾ete pomenova» ako chcete.
+</mark>
+
+```{r}
+plot(stratavahy~pre.weight,data=diet,col="red",ylab = "strata váhy (kg)", xlab = "pre.weight")
+abline(h=55,col="green")
+```
+
+```{r}
+boxplot(stratavahy~gender,data=diet,col="red",ylab = "stratavahy (kg)", xlab = "Gender")
+abline(h=55,col="green")
+```
+tu vidíme celkovú zmenu váhy (neh¾adiac na typ diéty) v závislosti od typu vohlavia. Nevieme, ktorý údaj predstavuje aké pohlavie, vieme iba urèi», ¾e pohlavie 1 je úspe¹nej¹ie. Názov osi V2 predstavujepohlavie.
+
+<mark>
+To máte pravdu, ale to sa dá µahko zisti», od toho sme dátoví detektívi.
+</mark>
+
+```{r}
+ggplot(data = diet, aes(x = factor(gender), y = Height)) + 
+  geom_boxplot()
+ggplot(data = diet, aes(x = factor(gender), y = pre.weight)) + 
+  geom_boxplot()
+```
+<mark>
+Tak¾e mô¾eme µahko odkódova», èo sú nuly a èo jednotky, a upravi» si dáta.
+</mark>
+```{r}
+diet %>%
+  mutate(
+    Gender = factor(if_else(gender==0, "Female", "Male")),
+    Diet = factor(Diet)
+  ) %>%
+  select(-gender) %>% # stary stlpec odstranime
+  select(Person, Gender, Age, everything()) -> diet # preusporiadame stlpce
+head(diet)
+```
+
+
+tapply(diet$stratavahy, diet$pre.weight,median)
+<mark>
+I tak ¹e da, ale toto je predsa èitateµnej¹ie, mô¾eme si napoèíta» aj chyby - keï¾e máme mediány, tak mediánové absolútne odchýlky ako analóg ¹tandardnej odchýlky:
+</mark>
+```{r}
+diet %>%
+  group_by(Gender, Diet) %>%
+  summarize(
+    med.prew = median(pre.weight),
+    mad.prew = mad(pre.weight),
+    med.bmi = median(pre.bmi),
+    mad.bmi = mad(pre.bmi),
+    med.strata = median(stratavahy),
+    mad.strata = mad(stratavahy)
+  ) -> summary.diet
+summary.diet
+```
+<mark>
+ale obrázok povie viac ako hromada èísel. Tak si dáta preusporiadame a skúsime poriadne vykresli».
+</mark>
+```{r}
+diet %>%
+  select(Gender, Diet, pre.weight, pre.bmi, stratavahy) %>% # aby sme nemali prive2a stlpcov
+  gather(
+    key = "parameter", value = "hodnota", c(pre.weight, pre.bmi, stratavahy)
+    ) %>%
+  ggplot(aes(x = Diet, y = hodnota, colour = Gender)) + 
+  theme_bw() + 
+  facet_grid(parameter~., scales = "free_y") + 
+  geom_boxplot()
+```
+
+
+
+```{r}
+kruskal.test(stratavahy~pre.weight,data=diet)
+```
+Kruskalov test porovnáva stradné hodoty viacerých súborov. Súbory sú nezávislé. Hladina významnosti je rovná 0,009023. Najmen¹ia hladina významnosti, pre ktorú hypotézu mo¾no zamietnu» je 0,05. Z toho mô¾me usúdi», ¾e aj typ diéty má vplyv na zmenu hmotnosti (spo¾ahlivos» metódy je 95%).
+
+<mark>
+No, len keï si pozriete porovnanie, zistíte, ¾e potrebujeme porovna» pohlavie x dietu, a e¹te tam máme ako kovariáty vek, vstupnú váhu a vstupné bmi. Tak¾e mô¾ete skúsi» Kruskala na diétu, ale pre mu¾ov a ¾eny osobitne. A hlavne si to treba nakresli» a zvá¾i», èo sú dobré prediktory. takéto nieèo myslím:
+</mark>
+
+```{r}
+diet %>%
+  select(Gender, Diet, Age, pre.weight, pre.bmi, stratavahy) %>% # aby sme nemali prive2a stlpcov
+  gather(
+    key = "parameter", value = "hodnota", c(Age, pre.weight, pre.bmi) # parametre budu iba prediktory
+    ) %>%
+  ggplot(aes(x = hodnota, y = stratavahy, colour = Gender)) + 
+  theme_bw() + 
+  facet_grid(Diet ~ parameter, scales = "free") + 
+  geom_point() + 
+  geom_smooth(method = "lm")
+```
+
+```{r}
+t.test(pre.bmi, y = NULL, alternative = c("two.sided", "less", "greater"), mu = 0, paired = FALSE, var.equal = FALSE, conf.level = 0.95, ...)
+```
